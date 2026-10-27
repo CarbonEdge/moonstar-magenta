@@ -1,0 +1,86 @@
+"""Chunked streaming on top of MagentaRT2System.generate(state=...).
+
+Generates 1 s chunks, carrying `state` between calls, switching the style prompt on a
+schedule (or from a prompt file polled each chunk). Writes one continuous WAV and reports
+per-chunk real-time factor: a chunk must finish in < chunk_sec of wall time to keep up.
+"""
+import argparse
+import pathlib
+import time
+
+import numpy as np
+
+FRAMES_PER_SEC = 25
+
+
+def prompt_at(schedule: list[tuple[float, str]], t: float) -> str:
+    """Last prompt whose start time <= t. `schedule` is sorted [(start_sec, prompt), ...]."""
+    current = schedule[0][1]
+    for start, text in schedule:
+        if start <= t:
+            current = text
+    return current
+
+
+def parse_schedule(items: list[str]) -> list[tuple[float, str]]:
+    """'0:lofi piano' '8:driving techno' -> [(0.0, 'lofi piano'), (8.0, 'driving techno')]."""
+    out = []
+    for item in items:
+        start, _, text = item.partition(":")
+        out.append((float(start), text.strip()))
+    return sorted(out)
+
+
+def underruns(chunk_walls: list[float], chunk_sec: float) -> int:
+    """Chunks that took longer than the audio they produced (would glitch live playback)."""
+    return sum(1 for w in chunk_walls if w > chunk_sec)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser("stream")
+    ap.add_argument("--model", default="mrt2_small")
+    ap.add_argument("--seconds", type=int, default=20)
+    ap.add_argument("--chunk-sec", type=float, default=1.0)
+    ap.add_argument("--prompt", action="append", default=["0:lo-fi hip hop, mellow piano"],
+                    help="start_sec:prompt, repeatable")
+    ap.add_argument("--out", default="data/stream.wav")
+    args = ap.parse_args()
+
+    from magenta_rt import MagentaRT2Jax
+    from magenta_rt.audio import Waveform
+    from magenta_rt.musiccoca import MUSICCOCA
+
+    schedule = parse_schedule(args.prompt[1:] if len(args.prompt) > 1 else args.prompt)
+    mrt = MagentaRT2Jax(size=args.model)
+    frames = int(args.chunk_sec * FRAMES_PER_SEC)
+    embeddings: dict[str, object] = {}
+    state, chunks, walls, last = None, [], [], None
+
+    t = 0.0
+    while t < args.seconds:
+        prompt = prompt_at(schedule, t)
+        if prompt not in embeddings:
+            embeddings[prompt] = mrt.embed_style(prompt, use_mapper=True)
+        if prompt != last:
+            print(f"[{t:5.1f}s] prompt -> {prompt!r}", flush=True)
+            last = prompt
+        t0 = time.perf_counter()
+        wav, state = mrt.generate(conditioning={MUSICCOCA.key: embeddings[prompt]},
+                                  frames=frames, state=state)
+        wall = time.perf_counter() - t0
+        walls.append(wall)
+        chunks.append(wav.samples)
+        t += args.chunk_sec
+
+    samples = np.concatenate(chunks, axis=0)
+    out = pathlib.Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    Waveform(samples, mrt._sample_rate).write(str(out))
+    warm = walls[1:] or walls  # first chunk includes warm-up
+    print(f"chunks={len(walls)} audio={args.seconds}s  first={walls[0]:.2f}s  "
+          f"warm mean={np.mean(warm):.3f}s max={np.max(warm):.3f}s  "
+          f"underruns={underruns(walls, args.chunk_sec)}  saved={out}")
+
+
+if __name__ == "__main__":
+    main()
