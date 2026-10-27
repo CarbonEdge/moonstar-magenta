@@ -48,7 +48,7 @@ def main() -> None:
 
     from magenta_rt import MagentaRT2Jax
     from magenta_rt.audio import Waveform
-    from magenta_rt.musiccoca import MUSICCOCA
+    from magenta_rt.config import MUSICCOCA
 
     schedule = parse_schedule(args.prompt[1:] if len(args.prompt) > 1 else args.prompt)
     mrt = MagentaRT2Jax(size=args.model)
