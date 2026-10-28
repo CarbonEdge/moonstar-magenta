@@ -35,3 +35,14 @@ def test_live_helpers():
     assert struct.unpack("<I", wav_header()[24:28])[0] == 48000
     assert sleep_needed(5.0, 1.0, 2.0) == 2.0 and sleep_needed(1.0, 1.0, 2.0) == 0.0
     assert len(to_pcm16(np.zeros((25, 2), dtype=np.float32))) == 100
+
+
+def test_timeline_helpers():
+    import numpy as np
+
+    from moonstar_magenta.stream import embedding_at, smooth_timeline
+    tl = np.array([[0.0], [10.0], [20.0]])
+    assert embedding_at(tl, 0.0)[0] == 0.0 and embedding_at(tl, 1.0)[0] == 20.0
+    assert abs(embedding_at(tl, 0.25)[0] - 5.0) < 1e-9
+    sm = smooth_timeline(tl, 3)
+    assert sm.shape == tl.shape and abs(sm[1, 0] - 10.0) < 1e-9

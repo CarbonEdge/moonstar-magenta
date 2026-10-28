@@ -50,6 +50,23 @@ def embed_spec(mrt, spec: str, Waveform, seed: int = 0):
     return parts[0][1] if len(parts) == 1 else blend(parts)
 
 
+def smooth_timeline(emb: np.ndarray, window: int) -> np.ndarray:
+    """Moving average over time (edge-padded) so the style drifts instead of jumping clip to clip."""
+    if window <= 1 or len(emb) < 2:
+        return emb
+    pad = window // 2
+    padded = np.pad(emb, ((pad, window - 1 - pad), (0, 0)), mode="edge")
+    return np.stack([padded[i:i + window].mean(0) for i in range(len(emb))])
+
+
+def embedding_at(timeline: np.ndarray, frac: float) -> np.ndarray:
+    """Linear interpolation along a (n, dim) timeline at position frac in [0, 1]."""
+    pos = min(max(frac, 0.0), 1.0) * (len(timeline) - 1)
+    lo = int(np.floor(pos))
+    hi = min(lo + 1, len(timeline) - 1)
+    return timeline[lo] * (1 - (pos - lo)) + timeline[hi] * (pos - lo)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser("stream")
     ap.add_argument("--model", default="mrt2_small")
@@ -60,6 +77,8 @@ def main() -> None:
     ap.add_argument("--temperature", type=float, default=None, help="default 1.3")
     ap.add_argument("--top-k", type=int, default=None, help="default 40")
     ap.add_argument("--cfg", type=float, default=None, help="musiccoca guidance scale")
+    ap.add_argument("--timeline", help="long audio file: follow its per-10s style embeddings from start to end over --seconds")
+    ap.add_argument("--timeline-smooth", type=int, default=3, help="moving-average window (clips) over the timeline")
     ap.add_argument("--seed", type=int, default=0, help="mapper noise seed for text prompts")
     ap.add_argument("--out", default="data/stream.wav")
     args = ap.parse_args()
@@ -74,16 +93,27 @@ def main() -> None:
     embeddings: dict[str, object] = {}
     state, chunks, walls, last = None, [], [], None
 
+    timeline = None
+    if args.timeline:
+        raw = np.asarray(mrt.embed_style(Waveform.from_file(args.timeline), pool_across_time=False))
+        timeline = smooth_timeline(raw.reshape(-1, raw.shape[-1]), args.timeline_smooth)
+        print(f"timeline: {len(timeline)} clips from {args.timeline}", flush=True)
+
     t = 0.0
     while t < args.seconds:
         prompt = prompt_at(schedule, t)
-        if prompt not in embeddings:
-            embeddings[prompt] = embed_spec(mrt, prompt, Waveform, args.seed)
-        if prompt != last:
+        if timeline is not None:
+            emb = embedding_at(timeline, t / args.seconds)
+            prompt = f"timeline {t / args.seconds:4.0%}"
+        else:
+            if prompt not in embeddings:
+                embeddings[prompt] = embed_spec(mrt, prompt, Waveform, args.seed)
+            emb = embeddings[prompt]
+        if prompt != last and timeline is None:
             print(f"[{t:5.1f}s] prompt -> {prompt!r}", flush=True)
             last = prompt
         t0 = time.perf_counter()
-        wav, state = mrt.generate(conditioning={MUSICCOCA.key: embeddings[prompt]},
+        wav, state = mrt.generate(conditioning={MUSICCOCA.key: emb},
                                   frames=frames, state=state,
                                   temperature=args.temperature, top_k=args.top_k,
                                   cfg_scales={"musiccoca": args.cfg} if args.cfg else None)

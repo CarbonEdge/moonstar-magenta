@@ -161,3 +161,19 @@ scripts/ace_cover.sh data/chain/mag_x.wav data/chain/ace_x_s05.wav 0.5 "same sty
 ```
 
 Strength 0..1 is how much of the source is kept (0.5 and 0.8 tried). Only one of Magenta or ACE should hold the GPU at a time. Judge by ear: chroma metrics did not predict quality.
+
+## Long references (DJ sets)
+
+A 30 s clip misses the arc of a set. Sample the whole video instead:
+
+```bash
+python scripts/fetch_audio.py URL set1 --spread 12 --seconds 30     # 12 windows evenly spaced, order kept (6 min)
+```
+
+Magenta embeds long audio in 10 s clips. By default they are averaged into one style (`--prompt "0:file:data/samples/set1.wav"`).
+To follow the set's tonal arc instead, use `--timeline` (the clips' style drifts from start to end over `--seconds`):
+
+```bash
+python -m moonstar_magenta.stream --seconds 180 --cfg 6 --timeline data/samples/set1.wav --timeline-smooth 3 --out data/set/mag_timeline.wav
+scripts/ace_cover.sh data/set/mag_timeline.wav data/set/ace_timeline.wav 0.3 "electronic DJ set, club mix, polished studio mix" 180
+```
