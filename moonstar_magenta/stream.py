@@ -38,7 +38,7 @@ def underruns(chunk_walls: list[float], chunk_sec: float) -> int:
     return sum(1 for w in chunk_walls if w > chunk_sec)
 
 
-def embed_spec(mrt, spec: str, Waveform):
+def embed_spec(mrt, spec: str, Waveform, seed: int = 0):
     """Embed one prompt spec: text, 'file:<path>' audio, or a weighted '|' blend of both."""
     parts = []
     for weight, text in parse_spec(spec):
@@ -46,7 +46,7 @@ def embed_spec(mrt, spec: str, Waveform):
             wav = Waveform.from_file(text[5:])
             parts.append((weight, mrt.embed_style(wav)))
         else:
-            parts.append((weight, mrt.embed_style(text, use_mapper=True)))
+            parts.append((weight, mrt.embed_style(text, use_mapper=True, seed=seed)))
     return parts[0][1] if len(parts) == 1 else blend(parts)
 
 
@@ -60,6 +60,7 @@ def main() -> None:
     ap.add_argument("--temperature", type=float, default=None, help="default 1.3")
     ap.add_argument("--top-k", type=int, default=None, help="default 40")
     ap.add_argument("--cfg", type=float, default=None, help="musiccoca guidance scale")
+    ap.add_argument("--seed", type=int, default=0, help="mapper noise seed for text prompts")
     ap.add_argument("--out", default="data/stream.wav")
     args = ap.parse_args()
 
@@ -77,7 +78,7 @@ def main() -> None:
     while t < args.seconds:
         prompt = prompt_at(schedule, t)
         if prompt not in embeddings:
-            embeddings[prompt] = embed_spec(mrt, prompt, Waveform)
+            embeddings[prompt] = embed_spec(mrt, prompt, Waveform, args.seed)
         if prompt != last:
             print(f"[{t:5.1f}s] prompt -> {prompt!r}", flush=True)
             last = prompt

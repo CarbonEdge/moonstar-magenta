@@ -23,3 +23,15 @@ def test_blend_normalises_weights():
     from moonstar_magenta.blend import blend
     out = blend([(3.0, np.array([1.0, 0.0])), (1.0, np.array([0.0, 1.0]))])
     assert np.allclose(out, [0.75, 0.25])
+
+
+def test_live_helpers():
+    import struct
+
+    import numpy as np
+
+    from moonstar_magenta.live import sleep_needed, to_pcm16, wav_header
+    assert len(wav_header()) == 44 and wav_header()[:4] == b"RIFF"
+    assert struct.unpack("<I", wav_header()[24:28])[0] == 48000
+    assert sleep_needed(5.0, 1.0, 2.0) == 2.0 and sleep_needed(1.0, 1.0, 2.0) == 0.0
+    assert len(to_pcm16(np.zeros((25, 2), dtype=np.float32))) == 100
