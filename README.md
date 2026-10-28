@@ -187,3 +187,7 @@ TIMELINE=data/samples/set1.wav scripts/chain.sh myset "electronic DJ set, club m
 ```
 
 Timeline over a spread-sampled long set + `--reset-every 60` + temperature 1.0, then an ACE cover at strength **0.6**. Findings: timeline beat pooled; resets fixed the quality drop after ~80 s; at 0.3 ACE made a good sketch worse, 0.6 won narrowly (0.8 roughly tied with the raw sketch, results vary by section). Note: `TEMP` is a Windows env var, so the temperature override is `MAG_TEMP`.
+
+## Lyrics
+
+`LYRICS_FILE=data/lyrics/song.txt scripts/chain.sh NAME "style words" SECONDS` sings those lyrics (ACE tags like `[Verse]`/`[Chorus]` help). Keep lyric files under `data/` (gitignored); do not commit third-party lyrics. Magenta supplies only an instrumental sketch, so the vocal comes entirely from ACE.
