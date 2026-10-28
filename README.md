@@ -96,6 +96,23 @@ python -m pytest -q
 PYTHONUTF8=1 python -m moonstar_magenta.bench mrt2_small 4     # writes data/bench.json
 ```
 
+## Live playback (browser)
+
+```bash
+export MSYS_NO_PATHCONV=1
+docker run -d --name mm-live --gpus all -p 8765:8765 -e PYTHONPATH=/app \
+  -v "C:\Users\HomePc\Documents\Magenta:/root/Documents/Magenta" \
+  -v "$PWD/moonstar_magenta:/app/moonstar_magenta" -v "$PWD/data:/app/data" \
+  moonstar-magenta python -m moonstar_magenta.live --seed 7 --cfg 6 \
+  --prompt "0.7*file:data/samples/ref1.wav | 0.3*lo-fi hip hop"
+```
+
+Open http://localhost:8765, type a new prompt (same blend syntax) and press Enter. Stop with `docker rm -f mm-live`.
+
+- Generation stays ~`--lead` seconds (default 2) ahead of playback, so a prompt change is heard after about that long.
+- `--seed` only affects text-prompt embedding (mapper noise). Upstream `generate()` has no sampling seed, so audio is not reproducible run to run.
+- Prompt change is a hard switch (no crossfade yet).
+
 ## Audio-conditioned prompts and comparison
 
 Prompts can be audio or a weighted blend: `--prompt "0:0.7*file:data/samples/ref1.wav | 0.3*funky bass"` (weights normalised, `file:` paths are read inside the container, so mount `data/`).
