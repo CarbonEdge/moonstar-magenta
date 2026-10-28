@@ -96,6 +96,20 @@ python -m pytest -q
 PYTHONUTF8=1 python -m moonstar_magenta.bench mrt2_small 4     # writes data/bench.json
 ```
 
+## Audio-conditioned prompts and comparison
+
+Prompts can be audio or a weighted blend: `--prompt "0:0.7*file:data/samples/ref1.wav | 0.3*funky bass"` (weights normalised, `file:` paths are read inside the container, so mount `data/`).
+
+```bash
+uv pip install -e ".[analysis]"                    # yt-dlp + librosa, host only
+python scripts/fetch_audio.py URL ref1 --start 30 --seconds 30   # -> data/samples/ref1.wav (needs ffmpeg)
+python scripts/compare.py data/samples/ref1.wav data/ab_*.wav    # tempo / key / brightness vs reference
+```
+
+`compare.py` is a blunt objective check (chroma cosine, tempo, spectral centroid). It does not replace listening.
+
+First result (ref1 vs 20 s outputs, `mrt2_small` unless noted): cfg 6 gave the best key match (chroma cosine 0.92) and closest brightness; `mrt2_base` was the worst match (0.81, too dark) and slower.
+
 ## Gotchas
 
 - `mrt` on Windows needs `PYTHONUTF8=1`.

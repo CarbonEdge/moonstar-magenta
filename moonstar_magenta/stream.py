@@ -10,6 +10,8 @@ import time
 
 import numpy as np
 
+from moonstar_magenta.blend import blend, parse_spec
+
 FRAMES_PER_SEC = 25
 
 
@@ -36,6 +38,18 @@ def underruns(chunk_walls: list[float], chunk_sec: float) -> int:
     return sum(1 for w in chunk_walls if w > chunk_sec)
 
 
+def embed_spec(mrt, spec: str, Waveform):
+    """Embed one prompt spec: text, 'file:<path>' audio, or a weighted '|' blend of both."""
+    parts = []
+    for weight, text in parse_spec(spec):
+        if text.startswith("file:"):
+            wav = Waveform.from_file(text[5:])
+            parts.append((weight, mrt.embed_style(wav)))
+        else:
+            parts.append((weight, mrt.embed_style(text, use_mapper=True)))
+    return parts[0][1] if len(parts) == 1 else blend(parts)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser("stream")
     ap.add_argument("--model", default="mrt2_small")
@@ -43,6 +57,9 @@ def main() -> None:
     ap.add_argument("--chunk-sec", type=float, default=1.0)
     ap.add_argument("--prompt", action="append", default=["0:lo-fi hip hop, mellow piano"],
                     help="start_sec:prompt, repeatable")
+    ap.add_argument("--temperature", type=float, default=None, help="default 1.3")
+    ap.add_argument("--top-k", type=int, default=None, help="default 40")
+    ap.add_argument("--cfg", type=float, default=None, help="musiccoca guidance scale")
     ap.add_argument("--out", default="data/stream.wav")
     args = ap.parse_args()
 
@@ -60,13 +77,15 @@ def main() -> None:
     while t < args.seconds:
         prompt = prompt_at(schedule, t)
         if prompt not in embeddings:
-            embeddings[prompt] = mrt.embed_style(prompt, use_mapper=True)
+            embeddings[prompt] = embed_spec(mrt, prompt, Waveform)
         if prompt != last:
             print(f"[{t:5.1f}s] prompt -> {prompt!r}", flush=True)
             last = prompt
         t0 = time.perf_counter()
         wav, state = mrt.generate(conditioning={MUSICCOCA.key: embeddings[prompt]},
-                                  frames=frames, state=state)
+                                  frames=frames, state=state,
+                                  temperature=args.temperature, top_k=args.top_k,
+                                  cfg_scales={"musiccoca": args.cfg} if args.cfg else None)
         wall = time.perf_counter() - t0
         walls.append(wall)
         chunks.append(wav.samples)
