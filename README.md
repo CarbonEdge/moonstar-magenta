@@ -179,3 +179,11 @@ scripts/ace_cover.sh data/set/mag_timeline.wav data/set/ace_timeline.wav 0.3 "el
 ```
 
 `--reset-every N` restarts Magenta's carried state every N seconds (0.5 s equal-power crossfade, `--fade`) to fight the quality drop seen after ~80 s of continuous generation. Untested by ear until compared against the no-reset runs.
+
+## Best recipe so far (judged by ear, 2026-10-28)
+
+```bash
+TIMELINE=data/samples/set1.wav scripts/chain.sh myset "electronic DJ set, club mix, driving groove" 180
+```
+
+Timeline over a spread-sampled long set + `--reset-every 60` + temperature 1.0, then an ACE cover at strength **0.6**. Findings: timeline beat pooled; resets fixed the quality drop after ~80 s; at 0.3 ACE made a good sketch worse, 0.6 won narrowly (0.8 roughly tied with the raw sketch, results vary by section). Note: `TEMP` is a Windows env var, so the temperature override is `MAG_TEMP`.
