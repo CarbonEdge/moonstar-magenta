@@ -2,11 +2,32 @@
 
 Local [Magenta RealTime 2](https://github.com/magenta/magenta-realtime) experiments. Sibling of `moonstar-music` (batch, ACE-Step); this repo explores *live / steerable* generation.
 
-## Status: spike (works, not yet live)
+## Status (2026-10-28): working pipeline, being tuned by ear
 
-- Chunked streaming on GPU works: 1 s chunks, state carried between chunks, prompt switchable mid-stream, 0 underruns.
-- It writes a WAV file. No live playback, no live prompt input yet.
-- Output quality not yet judged by ear.
+- Chunked streaming on GPU: 1 s chunks, state carried between chunks, ~0.22 s per chunk, 0 underruns.
+- Live browser playback with mid-stream prompt changes (`moonstar_magenta.live`, Web Audio player).
+- Long-reference style following (`--timeline`) and drift control (`--reset-every`).
+- Magenta -> ACE-Step cover chain (`scripts/chain.sh`), optional lyrics.
+- Current state, open questions and next steps: `docs/2026-10-28-checkpoint.md`.
+
+## Architecture
+
+```
+YouTube URL --scripts/fetch_audio.py--> data/samples/*.wav   (--spread N: N windows across a long set, order kept)
+                                              |
+        text prompt / file: blend / --timeline (per-10s style embeddings, smoothed, followed over time)
+                                              v
+  moonstar_magenta.stream  (Docker, JAX GPU, MagentaRT2, 1 s chunks, --reset-every N + crossfade)
+        |                         \
+        | WAV sketch               `-- moonstar_magenta.live: HTTP + Web Audio player, prompt box
+        v
+  scripts/ace_cover.sh  --multipart--> ACE-Step 1.5 API (host, localhost:8001, task_type=cover)
+        |                                  strength 0.6, optional LYRICS_FILE
+        v
+  data/chain/ace_NAME.wav (final)         scripts/chain.sh runs the whole path in one command
+```
+
+Two GPU processes (Magenta container, ACE-Step server) share one 16 GB card; run them one after the other. Everything under `data/` (samples, lyrics, outputs) is gitignored.
 
 ## Why Docker
 
@@ -138,17 +159,14 @@ First result (ref1 vs 20 s outputs, `mrt2_small` unless noted): cfg 6 gave the b
 
 ## Next steps
 
-1. **Listen** to `data/stream.wav`: is it musical, and is the prompt switch at 10 s smooth or jarring? This decides whether anything below is worth building.
-2. **Rebuild the image** so `stream.py` is baked in (`docker build` hung once; retry when Docker Desktop is idle).
-3. **Make it live:**
-   - Stream chunks to a browser (small HTTP/WebSocket server in the container, port-mapped) or to local speakers.
-   - Accept prompt changes while it plays (stdin or a web text box), instead of a fixed schedule.
-   - Needs a small playback buffer: stay a few chunks ahead of the playhead.
-4. **Smooth prompt transitions:** crossfade or interpolate between style embeddings rather than a hard switch.
-5. **Re-test `mrt2_base`:** 60 s warm run, steady-state steps/s, VRAM headroom. Only worth it if quality is clearly better than small.
-6. **Other controls** upstream exposes: temperature, top-k, CFG scales (`musiccoca`, `notes`, `drums`). Expose them as live knobs.
-7. **Connect to the rest of the workbench (optional):** a `moonstar-music` provider mode, or a gateway-driven "DJ" that changes prompts over time. Keep it a pure HTTP client; no imports across repos.
-8. **Housekeeping:** add a `docker-compose.yml` with the GPU and volume flags so the long `docker run` isn't needed; add `moonstar-magenta` to the workbench root `CLAUDE.md` project table.
+Done since the spike: listening (works well with simple prompts), live browser playback with prompt changes, `--timeline`, `--reset-every`, the ACE chain and lyrics. Open items (full list in `docs/2026-10-28-checkpoint.md`):
+
+1. Listen to the 10-minute chain output and the lyrics clips.
+2. Smooth live prompt transitions (crossfade or interpolate embeddings instead of a hard switch).
+3. Cover mode in the `moonstar-music` ACE provider (it is text2music only today).
+4. Re-test `mrt2_base` with the reset recipe (it matched the reference worse and was borderline real time before).
+5. Expose temperature, top-k, cfg as live knobs.
+6. `docker-compose.yml` with the GPU and volume flags so the long `docker run` isn't needed.
 
 ## Chain: Magenta -> ACE-Step cover
 
