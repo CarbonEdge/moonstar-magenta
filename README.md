@@ -149,3 +149,15 @@ First result (ref1 vs 20 s outputs, `mrt2_small` unless noted): cfg 6 gave the b
 6. **Other controls** upstream exposes: temperature, top-k, CFG scales (`musiccoca`, `notes`, `drums`). Expose them as live knobs.
 7. **Connect to the rest of the workbench (optional):** a `moonstar-music` provider mode, or a gateway-driven "DJ" that changes prompts over time. Keep it a pure HTTP client; no imports across repos.
 8. **Housekeeping:** add a `docker-compose.yml` with the GPU and volume flags so the long `docker run` isn't needed; add `moonstar-magenta` to the workbench root `CLAUDE.md` project table.
+
+## Chain: Magenta -> ACE-Step cover
+
+Magenta gives a quick style sketch; an ACE-Step 1.5 cover turns it into a coherent track.
+
+```bash
+# 1. sketch (30 s) with Magenta in Docker -> data/chain/mag_x.wav  (see "Run chunked streaming")
+# 2. start ACE-Step:  cd D:/dev/ACE-Step-1.5 && uv run acestep-api     (localhost:8001)
+scripts/ace_cover.sh data/chain/mag_x.wav data/chain/ace_x_s05.wav 0.5 "same style words as the Magenta prompt, polished studio mix"
+```
+
+Strength 0..1 is how much of the source is kept (0.5 and 0.8 tried). Only one of Magenta or ACE should hold the GPU at a time. Judge by ear: chroma metrics did not predict quality.
