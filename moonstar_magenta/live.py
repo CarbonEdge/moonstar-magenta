@@ -21,7 +21,7 @@ SAMPLE_RATE, CHANNELS = 48000, 2
 PAGE = """<!doctype html><meta charset=utf-8><title>moonstar-magenta live</title>
 <body style="font:16px system-ui;max-width:640px;margin:2rem auto;padding:0 1rem">
 <h3>moonstar-magenta live</h3>
-<audio id=a controls autoplay src="/audio.wav"></audio>
+<p><button id=go onclick="start()">Play</button> <button onclick="stop()">Stop</button> <span id=b></span></p>
 <p><input id=p style="width:100%" placeholder="0.7*file:data/samples/ref1.wav | 0.3*funky bass"></p>
 <p><button onclick="send()">Apply prompt</button> <span id=s></span></p>
 <script>
@@ -30,6 +30,29 @@ async function send(){await fetch("/prompt",{method:"POST",body:p.value});poll()
 async function poll(){const r=await (await fetch("/status")).json();s.textContent="now: "+r.prompt+" | lead "+r.lead.toFixed(1)+"s";}
 p.addEventListener("keydown",e=>{if(e.key==="Enter")send()});
 setInterval(poll,2000);poll();
+
+// Web Audio player: read raw PCM from the stream, schedule gapless buffers, cap how far ahead we buffer.
+const SR=48000,CH=2,FRAME=4,MAX_AHEAD=2.5,START_PAD=0.4;
+let ctx=null,ctl=null,next=0,bsp=document.getElementById("b");
+async function start(){
+  stop();ctx=new AudioContext({sampleRate:SR});ctl=new AbortController();
+  const my=ctx,res=await fetch("/audio.wav",{signal:ctl.signal}),rd=res.body.getReader();
+  let buf=new Uint8Array(0),skip=44;next=0;
+  try{while(ctx===my){
+    const {value,done}=await rd.read();if(done)break;
+    let v=value;if(skip){const n=Math.min(skip,v.length);v=v.subarray(n);skip-=n;}
+    const m=new Uint8Array(buf.length+v.length);m.set(buf);m.set(v,buf.length);
+    const n=m.length-(m.length%FRAME);buf=m.slice(n);if(!n)continue;
+    const pcm=new Int16Array(m.buffer,0,n/2),frames=n/FRAME,ab=my.createBuffer(CH,frames,SR);
+    for(let c=0;c<CH;c++){const d=ab.getChannelData(c);for(let i=0;i<frames;i++)d[i]=pcm[i*CH+c]/32768;}
+    const src=my.createBufferSource();src.buffer=ab;src.connect(my.destination);
+    if(next<my.currentTime)next=my.currentTime+START_PAD;
+    src.start(next);next+=ab.duration;
+    bsp.textContent="buffered "+(next-my.currentTime).toFixed(1)+"s";
+    while(ctx===my&&next-my.currentTime>MAX_AHEAD)await new Promise(r=>setTimeout(r,100));
+  }}catch(e){if(e.name!=="AbortError")bsp.textContent="stream error: "+e;}
+}
+function stop(){if(ctl)ctl.abort();if(ctx)ctx.close();ctx=null;ctl=null;bsp.textContent="";}
 </script>"""
 
 
@@ -68,6 +91,16 @@ class Session:
     def status(self) -> dict:
         lead = self.produced - (time.perf_counter() - self.t0) if self.t0 else 0.0
         return {"prompt": self.prompt, "lead": lead}
+
+    def rebase(self) -> None:
+        """New listener: drop stale buffered chunks and restart pacing so playback begins near-live."""
+        while True:
+            try:
+                self.chunks.get_nowait()
+            except queue.Empty:
+                break
+        if self.t0 is not None:
+            self.t0 = time.perf_counter() - self.produced
 
     def _embed(self, spec: str):
         if spec not in self.embeddings:
@@ -115,6 +148,7 @@ def make_handler(session: Session):
                 self.send_header("Content-Type", "audio/wav")
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
+                session.rebase()
                 try:
                     self.wfile.write(wav_header())
                     while True:
