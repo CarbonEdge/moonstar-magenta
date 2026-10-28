@@ -50,6 +50,20 @@ def embed_spec(mrt, spec: str, Waveform, seed: int = 0):
     return parts[0][1] if len(parts) == 1 else blend(parts)
 
 
+def crossfade_append(chunks: list, new: np.ndarray, overlap: int) -> None:
+    """Append `new`, equal-power crossfading its head over the tail of the last chunk (shortens audio by `overlap`)."""
+    prev = chunks[-1]
+    overlap = min(overlap, len(prev), len(new))
+    if overlap <= 0:
+        chunks.append(new)
+        return
+    ramp = np.linspace(0.0, np.pi / 2, overlap)[:, None]
+    mixed = prev[-overlap:] * np.cos(ramp) + new[:overlap] * np.sin(ramp)
+    chunks[-1] = prev[:-overlap]
+    chunks.append(mixed)
+    chunks.append(new[overlap:])
+
+
 def smooth_timeline(emb: np.ndarray, window: int) -> np.ndarray:
     """Moving average over time (edge-padded) so the style drifts instead of jumping clip to clip."""
     if window <= 1 or len(emb) < 2:
@@ -79,6 +93,9 @@ def main() -> None:
     ap.add_argument("--cfg", type=float, default=None, help="musiccoca guidance scale")
     ap.add_argument("--timeline", help="long audio file: follow its per-10s style embeddings from start to end over --seconds")
     ap.add_argument("--timeline-smooth", type=int, default=3, help="moving-average window (clips) over the timeline")
+    ap.add_argument("--reset-every", type=float, default=0.0,
+                    help="seconds between state resets (fights long-run drift); 0 = never")
+    ap.add_argument("--fade", type=float, default=0.5, help="crossfade seconds at each reset")
     ap.add_argument("--seed", type=int, default=0, help="mapper noise seed for text prompts")
     ap.add_argument("--out", default="data/stream.wav")
     args = ap.parse_args()
@@ -112,6 +129,9 @@ def main() -> None:
         if prompt != last and timeline is None:
             print(f"[{t:5.1f}s] prompt -> {prompt!r}", flush=True)
             last = prompt
+        reset = args.reset_every > 0 and t > 0 and t % args.reset_every < 1e-6
+        if reset:
+            state = None
         t0 = time.perf_counter()
         wav, state = mrt.generate(conditioning={MUSICCOCA.key: emb},
                                   frames=frames, state=state,
@@ -119,7 +139,11 @@ def main() -> None:
                                   cfg_scales={"musiccoca": args.cfg} if args.cfg else None)
         wall = time.perf_counter() - t0
         walls.append(wall)
-        chunks.append(wav.samples)
+        if reset:
+            crossfade_append(chunks, wav.samples, int(args.fade * mrt._sample_rate))
+            print(f"[{t:5.1f}s] state reset", flush=True)
+        else:
+            chunks.append(wav.samples)
         t += args.chunk_sec
 
     samples = np.concatenate(chunks, axis=0)

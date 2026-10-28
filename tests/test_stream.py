@@ -46,3 +46,14 @@ def test_timeline_helpers():
     assert abs(embedding_at(tl, 0.25)[0] - 5.0) < 1e-9
     sm = smooth_timeline(tl, 3)
     assert sm.shape == tl.shape and abs(sm[1, 0] - 10.0) < 1e-9
+
+
+def test_crossfade_append_shortens_by_overlap_and_is_continuous():
+    import numpy as np
+
+    from moonstar_magenta.stream import crossfade_append
+    chunks = [np.ones((100, 2))]
+    crossfade_append(chunks, np.ones((100, 2)), 20)
+    out = np.concatenate(chunks)
+    assert len(out) == 180
+    assert np.all(out > 0.99)  # equal-power fade of identical signals stays near unity (1.0 at ends, ~1.41 mid)

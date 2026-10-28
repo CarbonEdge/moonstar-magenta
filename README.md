@@ -177,3 +177,5 @@ To follow the set's tonal arc instead, use `--timeline` (the clips' style drifts
 python -m moonstar_magenta.stream --seconds 180 --cfg 6 --timeline data/samples/set1.wav --timeline-smooth 3 --out data/set/mag_timeline.wav
 scripts/ace_cover.sh data/set/mag_timeline.wav data/set/ace_timeline.wav 0.3 "electronic DJ set, club mix, polished studio mix" 180
 ```
+
+`--reset-every N` restarts Magenta's carried state every N seconds (0.5 s equal-power crossfade, `--fade`) to fight the quality drop seen after ~80 s of continuous generation. Untested by ear until compared against the no-reset runs.
