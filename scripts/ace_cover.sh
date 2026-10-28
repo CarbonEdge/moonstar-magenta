@@ -1,14 +1,15 @@
 #!/bin/bash
 # Cover/remix an audio file with a local ACE-Step 1.5 server (uv run acestep-api, default localhost:8001).
 #   scripts/ace_cover.sh SRC.wav OUT.wav STRENGTH "caption" [duration_sec=30]
-# STRENGTH 0..1: higher keeps more of the source. Uploads as multipart: JSON paths outside the temp dir are rejected.
+# STRENGTH 0..1: higher keeps more of the source. MODE=ref uses SRC only as a style reference (text2music, new structure). Uploads as multipart: JSON paths outside the temp dir are rejected.
 set -euo pipefail
 src=$1; out=$2; strength=$3; caption=$4; dur=${5:-30}
 url=${ACESTEP_URL:-http://localhost:8001}
+if [ "${MODE:-cover}" = ref ]; then srcargs=(-F "ref_audio=@$src" -F "task_type=text2music"); else srcargs=(-F "src_audio=@$src" -F "task_type=cover" -F "audio_cover_strength=$strength"); fi
 field() { python -c "import sys,json;print($1)"; }
 
 tid=$(curl -sf -m 60 -X POST "$url/release_task" \
-  -F "src_audio=@$src" -F "task_type=cover" -F "audio_cover_strength=$strength" \
+  "${srcargs[@]}" \
   -F "prompt=$caption" -F "lyrics=[Instrumental]" -F "audio_duration=$dur" \
   -F "audio_format=wav" -F "batch_size=1" -F "thinking=false" | field "json.load(sys.stdin)['data']['task_id']")
 echo "task=$tid"
