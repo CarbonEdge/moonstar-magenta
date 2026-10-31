@@ -8,11 +8,13 @@ url=${ACESTEP_URL:-http://localhost:8001}
 if [ "${MODE:-cover}" = ref ]; then srcargs=(-F "ref_audio=@$src" -F "task_type=text2music"); else srcargs=(-F "src_audio=@$src" -F "task_type=cover" -F "audio_cover_strength=$strength"); fi
 # LYRICS_FILE=path sings those lyrics (curl reads the file as the field value); default is instrumental.
 if [ -n "${LYRICS_FILE:-}" ]; then lyr=(-F "lyrics=<$LYRICS_FILE"); else lyr=(-F "lyrics=[Instrumental]"); fi
+# BPM=108 pins the tempo (ACE otherwise infers it).
+if [ -n "${BPM:-}" ]; then bpmargs=(-F "bpm=$BPM"); else bpmargs=(); fi
 field() { python -c "import sys,json;print($1)"; }
 
 tid=$(curl -sf -m 60 -X POST "$url/release_task" \
   "${srcargs[@]}" \
-  -F "prompt=$caption" "${lyr[@]}" -F "vocal_language=en" -F "audio_duration=$dur" \
+  "${bpmargs[@]}" -F "prompt=$caption" "${lyr[@]}" -F "vocal_language=en" -F "audio_duration=$dur" \
   -F "audio_format=wav" -F "batch_size=1" -F "thinking=false" | field "json.load(sys.stdin)['data']['task_id']")
 echo "task=$tid"
 for _ in $(seq 1 180); do
